@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Diffusion: Surface Area, Distance, Capillary Sink</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      color: #222;
+    }
+    h1 { margin: 0 0 0.2rem; font-size: 1.6rem; }
+    .subtitle { margin: 0 0 1rem; font-size: 0.95rem; color: #555; }
+
+    .container {
+      background: white;
+      border-radius: 16px;
+      padding: 16px 20px 20px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+      max-width: 980px;
+      width: 100%;
+    }
+
+    #simRow { display: flex; gap: 16px; flex-wrap: wrap; }
+    #canvasWrapper { flex: 2; min-width: 420px; }
+
+    canvas {
+      border-radius: 12px;
+      border: 1px solid #ddd;
+      background: #fafafa;
+      display: block;
+    }
+
+    #controls {
+      flex: 1;
+      min-width: 260px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      font-size: 0.9rem;
+    }
+
+    .control-group {
+      background: #f8f8f8;
+      border-radius: 12px;
+      padding: 10px 12px;
+      border: 1px solid #e2e2e2;
+    }
+
+    .control-group h2 { margin: 0 0 0.4rem 0; font-size: 1rem; }
+    .slider-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+    input[type="range"] { width: 100%; }
+
+    .membrane-label-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: #6b7280;
+      margin-top: 2px;
+    }
+
+    .buttons { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+
+    button {
+      border-radius: 999px;
+      border: none;
+      padding: 7px 12px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      background: #2563eb;
+      color: white;
+      box-shadow: 0 4px 10px rgba(37, 99, 235, 0.3);
+      transition: transform 0.05s ease, box-shadow 0.05s ease, background 0.15s;
+    }
+    button.secondary {
+      background: #e5e7eb;
+      color: #111827;
+      box-shadow: none;
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 6px;
+      font-size: 0.85rem;
+      margin-top: 6px;
+    }
+    .metric-card {
+      background: #ffffff;
+      border-radius: 10px;
+      padding: 6px 8px;
+      border: 1px solid #e5e7eb;
+    }
+    .metric-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #6b7280;
+      margin-bottom: 2px;
+    }
+    .metric-value {
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: #111827;
+    }
+
+    #note {
+      margin-top: 10px;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      color: #444;
+    }
+
+    @media (max-width: 800px) {
+      body { padding: 12px; }
+      h1 { font-size: 1.3rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Diffusion Simulation</h1>
+    <p class="subtitle">
+      Explore how <strong>surface area</strong> (infolding), <strong>diffusion distance</strong> (membrane width),
+      and a <strong>capillary sink</strong> affect the <strong>rate of diffusion</strong>.
+    </p>
+
+    <div id="simRow">
+      <div id="canvasWrapper">
+        <canvas id="simCanvas" width="720" height="340"></canvas>
+      </div>
+
+      <div id="controls">
+        <div class="control-group">
+          <h2>Membrane Infolding (Surface Area)</h2>
+          <div class="slider-row">
+            <input type="range" id="foldSlider" min="0" max="100" value="30" />
+            <span id="foldLabel">30%</span>
+          </div>
+          <div class="membrane-label-row">
+            <span>Smooth</span>
+            <span>Highly infolded</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <h2>Membrane Width (Diffusion Distance)</h2>
+          <div>Wider membrane = longer distance = slower diffusion.</div>
+          <div class="slider-row">
+            <input type="range" id="widthSlider" min="6" max="40" value="12" />
+            <span id="widthLabel">12px</span>
+          </div>
+          <div class="membrane-label-row">
+            <span>Thin</span>
+            <span>Thick</span>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <h2>Controls</h2>
+          <div class="buttons">
+            <button id="startBtn">Start</button>
+            <button id="pauseBtn" disabled>Pause</button>
+            <button id="resetBtn" class="secondary">Reset</button>
+          </div>
+          <div class="buttons" style="margin-top:8px;">
+            <button id="capillaryBtn" class="secondary">Add capillary</button>
+          </div>
+          <div style="margin-top:6px;font-size:0.8rem;color:#555;">
+            Capillary removes particles from the right side (carried away). Removed particles are gone permanently.
+          </div>
+        </div>
+
+        <div class="control-group">
+          <h2>Measurements</h2>
+          <div class="metrics">
+            <div class="metric-card">
+              <div class="metric-label">Particles Left / Right</div>
+              <div class="metric-value" id="particlesLR">–</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Diffusion rate</div>
+              <div class="metric-value" id="diffRate">0.00 / s</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Total crossings</div>
+              <div class="metric-value" id="crossingsTotal">0</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Capillary removed</div>
+              <div class="metric-value" id="capRemoved">0</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Rel. surface area</div>
+              <div class="metric-value" id="surfaceAreaDisplay">1.0×</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">Membrane width</div>
+              <div class="metric-value" id="memWidthDisplay">12px</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="note">
+      <strong>Model note (simple):</strong><br/>
+      When a particle hits the membrane, it may cross. Crossing chance increases with
+      <strong>infolding</strong> and decreases with <strong>membrane width</strong>. The capillary is a “sink”
+      that removes particles from the right, helping maintain a concentration gradient for longer.
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("simCanvas");
+    const ctx = canvas.getContext("2d");
+    const W = canvas.width;
+    const H = canvas.height;
+
+    // Particles
+    const NUM_PARTICLES_START = 160;
+    const R = 3;
+    const BASE_STEP = 0.9;
+
+    // Membrane
+    const MEMBRANE_X = W / 2;
+
+    // Capillary (right-side sink) geometry
+    const CAP_W = 58;
+    const CAP_INLET_W = 16;
+    const CAP_H = 190;
+    const CAP_Y = (H - CAP_H) / 2;
+    const CAP_X = W - CAP_W - 10;
+    const CAP_INLET_X = CAP_X;
+
+    // UI
+    const foldSlider = document.getElementById("foldSlider");
+    const widthSlider = document.getElementById("widthSlider");
+    const foldLabel = document.getElementById("foldLabel");
+    const widthLabel = document.getElementById("widthLabel");
+
+    const startBtn = document.getElementById("startBtn");
+    const pauseBtn = document.getElementById("pauseBtn");
+    const resetBtn = document.getElementById("resetBtn");
+    const capillaryBtn = document.getElementById("capillaryBtn");
+
+    const particlesLRDisplay = document.getElementById("particlesLR");
+    const diffRateDisplay = document.getElementById("diffRate");
+    const crossingsTotalDisplay = document.getElementById("crossingsTotal");
+    const capRemovedDisplay = document.getElementById("capRemoved");
+    const surfaceAreaDisplay = document.getElementById("surfaceAreaDisplay");
+    const memWidthDisplay = document.getElementById("memWidthDisplay");
+
+    // State
+    let particles = []; // each particle: {x,y,vx,vy}
+    let running = false;
+    let paused = false;
+    let capillaryOn = false;
+
+    let totalCrossings = 0;
+    let capRemoved = 0;
+
+    // Rate window
+    let recentCrossings = []; // timestamps ms
+    const RATE_WINDOW_MS = 3000;
+
+    function relSurfaceArea() {
+      const level = parseFloat(foldSlider.value) / 100;
+      return 1 + 4 * level;
+    }
+
+    function baseCrossProbFromSurfaceArea() {
+      const level = parseFloat(foldSlider.value) / 100;
+      const minP = 0.05;
+      const maxP = 0.95;
+      return minP + (maxP - minP) * level;
+    }
+
+    function distanceFactor() {
+      const mw = parseFloat(widthSlider.value);
+      const minW = parseFloat(widthSlider.min);
+      const factor = Math.pow(minW / mw, 0.9);
+      return Math.max(0.15, Math.min(1.0, factor));
+    }
+
+    function effectiveCrossProb() {
+      return baseCrossProbFromSurfaceArea() * distanceFactor();
+    }
+
+    // Infolded membrane curve
+    function membraneParams() {
+      const level = parseFloat(foldSlider.value) / 100;
+      const amplitude = 42 * level;
+      const waves = 0.3 + (3.0 - 0.3) * level;
+      return { amplitude, waves };
+    }
+
+    function membraneXAtY(y) {
+      const { amplitude, waves } = membraneParams();
+      const t = y / H;
+      const angle = 2 * Math.PI * waves * t;
+      return MEMBRANE_X + amplitude * Math.sin(angle);
+    }
+
+    function createParticleOnLeft() {
+      const margin = 10;
+      const xMax = MEMBRANE_X - 35;
+      const x = Math.random() * (xMax - margin) + margin;
+      const y = Math.random() * (H - 2 * margin) + margin;
+      return {
+        x, y,
+        vx: (Math.random() - 0.5) * BASE_STEP,
+        vy: (Math.random() - 0.5) * BASE_STEP
+      };
+    }
+
+    function initParticlesLeftOnly() {
+      particles = [];
+      for (let i = 0; i < NUM_PARTICLES_START; i++) particles.push(createParticleOnLeft());
+      totalCrossings = 0;
+      capRemoved = 0;
+      recentCrossings = [];
+      updateUI();
+    }
+
+    function updateUI() {
+      foldLabel.textContent = `${foldSlider.value}%`;
+      widthLabel.textContent = `${widthSlider.value}px`;
+
+      surfaceAreaDisplay.textContent = `${relSurfaceArea().toFixed(1)}×`;
+      memWidthDisplay.textContent = `${parseFloat(widthSlider.value).toFixed(0)}px`;
+
+      // left/right count relative to midline (reporting only)
+      let left = 0, right = 0;
+      for (const p of particles) {
+        if (p.x < MEMBRANE_X) left++;
+        else right++;
+      }
+      particlesLRDisplay.textContent = `${left} / ${right}`;
+
+      const now = performance.now();
+      recentCrossings = recentCrossings.filter(t => now - t <= RATE_WINDOW_MS);
+      const rate = recentCrossings.length / (RATE_WINDOW_MS / 1000);
+      diffRateDisplay.textContent = `${rate.toFixed(2)} / s`;
+
+      crossingsTotalDisplay.textContent = String(totalCrossings);
+      capRemovedDisplay.textContent = String(capRemoved);
+
+      capillaryBtn.textContent = capillaryOn ? "Remove capillary" : "Add capillary";
+    }
+
+    function reflectWalls(p) {
+      if (p.y - R < 0) { p.y = R; p.vy *= -1; }
+      if (p.y + R > H) { p.y = H - R; p.vy *= -1; }
+      if (p.x - R < 0) { p.x = R; p.vx *= -1; }
+      if (p.x + R > W) { p.x = W - R; p.vx *= -1; }
+    }
+
+    function inCapillaryInlet(x, y) {
+      return (
+        capillaryOn &&
+        x > CAP_INLET_X && x < (CAP_INLET_X + CAP_INLET_W) &&
+        y > CAP_Y && y < (CAP_Y + CAP_H)
+      );
+    }
+
+    function updateParticles() {
+      const mw = parseFloat(widthSlider.value);
+      const collisionBand = mw; // treat width as the interaction band (distance proxy)
+      const halfBand = collisionBand / 2;
+
+      const pCross = effectiveCrossProb();
+
+      // We may remove particles => iterate backwards so splice is safe
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+
+        // random walk
+        p.vx += (Math.random() - 0.5) * 0.2;
+        p.vy += (Math.random() - 0.5) * 0.2;
+
+        // speed limit
+        const maxSpeed = 2.0;
+        const s = Math.hypot(p.vx, p.vy);
+        if (s > maxSpeed) {
+          p.vx = (p.vx / s) * maxSpeed;
+          p.vy = (p.vy / s) * maxSpeed;
+        }
+
+        const nextX = p.x + p.vx;
+        const nextY = p.y + p.vy;
+
+        // Capillary sink: remove permanently if entering inlet
+        if (inCapillaryInlet(nextX, nextY)) {
+          particles.splice(i, 1);
+          capRemoved++;
+          continue;
+        }
+
+        // Membrane interaction
+        const yClamped = Math.max(0, Math.min(H, nextY));
+        const mX = membraneXAtY(yClamped);
+        const dist = nextX - mX;
+
+        if (Math.abs(dist) <= halfBand + R) {
+          if (Math.random() < pCross) {
+            // Cross
+            const push = halfBand + R + 1;
+            p.x = (dist < 0) ? (mX + push) : (mX - push);
+            p.y = nextY;
+
+            totalCrossings++;
+            recentCrossings.push(performance.now());
+          } else {
+            // Reflect
+            p.vx *= -1;
+            p.x = p.x + p.vx;
+            p.y = nextY;
+          }
+        } else {
+          p.x = nextX;
+          p.y = nextY;
+        }
+
+        reflectWalls(p);
+      }
+    }
+
+    function drawBackground() {
+      ctx.fillStyle = "rgba(37, 99, 235, 0.04)";
+      ctx.fillRect(0, 0, W/2, H);
+      ctx.fillStyle = "rgba(37, 99, 235, 0.02)";
+      ctx.fillRect(W/2, 0, W/2, H);
+
+      ctx.fillStyle = "rgba(17, 24, 39, 0.6)";
+      ctx.font = "12px system-ui";
+      ctx.fillText("Left compartment", 12, 18);
+      ctx.fillText("Right compartment", W/2 + 12, 18);
+    }
+
+    function drawMembrane() {
+      const { amplitude, waves } = membraneParams();
+      const samples = 240;
+      const mw = parseFloat(widthSlider.value);
+
+      ctx.save();
+      ctx.lineWidth = mw;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = "#111827";
+      ctx.beginPath();
+
+      for (let i = 0; i <= samples; i++) {
+        const t = i / samples;
+        const y = t * H;
+        const angle = 2 * Math.PI * waves * t;
+        const x = MEMBRANE_X + amplitude * Math.sin(angle);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(17,24,39,0.25)";
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawCapillary() {
+      if (!capillaryOn) return;
+
+      // Red tube
+      ctx.save();
+      ctx.fillStyle = "rgba(239, 68, 68, 0.14)";     // red translucent fill
+      ctx.strokeStyle = "rgba(239, 68, 68, 0.75)";   // red outline
+      ctx.lineWidth = 2;
+
+      ctx.beginPath();
+      ctx.roundRect(CAP_X, CAP_Y, CAP_W, CAP_H, 12);
+      ctx.fill();
+      ctx.stroke();
+
+      // Inlet highlight (darker red)
+      ctx.fillStyle = "rgba(239, 68, 68, 0.28)";
+      ctx.fillRect(CAP_INLET_X, CAP_Y, CAP_INLET_W, CAP_H);
+
+      ctx.fillStyle = "rgba(239, 68, 68, 0.95)";
+      ctx.font = "12px system-ui";
+      ctx.fillText("Capillary (sink)", CAP_X - 14, CAP_Y - 8);
+
+      ctx.restore();
+    }
+
+    function drawParticles() {
+      ctx.fillStyle = "#2563eb";
+      for (const p of particles) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, W, H);
+      drawBackground();
+      drawMembrane();
+      drawCapillary();
+      drawParticles();
+
+      ctx.save();
+      ctx.fillStyle = "rgba(17,24,39,0.55)";
+      ctx.font = "12px system-ui";
+      ctx.fillText(`Effective crossing chance: ${(effectiveCrossProb()*100).toFixed(0)}%`, 12, H - 10);
+      ctx.restore();
+    }
+
+    function tick() {
+      if (running && !paused) {
+        updateParticles();
+        updateUI();
+      } else {
+        updateUI();
+      }
+      render();
+      requestAnimationFrame(tick);
+    }
+
+    // Polyfill roundRect if needed
+    if (!CanvasRenderingContext2D.prototype.roundRect) {
+      CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+        const rr = Math.min(r, w/2, h/2);
+        this.beginPath();
+        this.moveTo(x + rr, y);
+        this.arcTo(x + w, y, x + w, y + h, rr);
+        this.arcTo(x + w, y + h, x, y + h, rr);
+        this.arcTo(x, y + h, x, y, rr);
+        this.arcTo(x, y, x + w, y, rr);
+        this.closePath();
+        return this;
+      };
+    }
+
+    // Events
+    foldSlider.addEventListener("input", updateUI);
+    widthSlider.addEventListener("input", updateUI);
+
+    startBtn.addEventListener("click", () => {
+      running = true;
+      paused = false;
+      pauseBtn.disabled = false;
+      pauseBtn.textContent = "Pause";
+      startBtn.disabled = true;
+    });
+
+    pauseBtn.addEventListener("click", () => {
+      if (!running) return;
+      paused = !paused;
+      pauseBtn.textContent = paused ? "Resume" : "Pause";
+    });
+
+    resetBtn.addEventListener("click", () => {
+      running = false;
+      paused = false;
+      startBtn.disabled = false;
+      pauseBtn.disabled = true;
+      pauseBtn.textContent = "Pause";
+      initParticlesLeftOnly();
+    });
+
+    capillaryBtn.addEventListener("click", () => {
+      capillaryOn = !capillaryOn;
+      updateUI();
+    });
+
+    // Init
+    initParticlesLeftOnly();
+    updateUI();
+    render();
+    requestAnimationFrame(tick);
+  </script>
+</body>
+</html>
